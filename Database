@@ -1,0 +1,56 @@
+const mongoose = require('mongoose');
+
+const bookingSchema = new mongoose.Schema({
+  name: {
+    type: String,
+    required: true,
+    trim: true
+  },
+  email: {
+    type: String,
+    required: true,
+    trim: true,
+    lowercase: true
+  },
+  company: {
+    type: String,
+    trim: true
+  },
+  role: {
+    type: String,
+    trim: true
+  },
+  preferredDate: {
+    type: Date,
+    required: true
+  },
+  preferredTime: {
+    type: String,
+    required: true
+  },
+  timezone: {
+    type: String,
+    default: 'UTC'
+  },
+  status: {
+    type: String,
+    enum: ['pending', 'confirmed', 'cancelled', 'completed'],
+    default: 'pending'
+  },
+  meetingLink: {
+    type: String,
+    trim: true
+  },
+  notes: {
+    type: String,
+    trim: true
+  }
+}, {
+  timestamps: true
+});
+
+// Index for efficient queries
+bookingSchema.index({ email: 1, createdAt: -1 });
+bookingSchema.index({ preferredDate: 1 });
+
+module.exports = mongoose.model('Booking', bookingSchema);
