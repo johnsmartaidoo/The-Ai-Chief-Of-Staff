@@ -1,0 +1,134 @@
+const express = require('express');
+const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+const Payment = require('../models/Payment');
+const Booking = require('../models/Booking');
+const router = express.Router();
+
+// Create Stripe payment intent
+router.post('/create-intent', async (req, res) => {
+  try {
+    const { bookingId, amount, currency = 'usd' } = req.body;
+
+    const booking = await Booking.findById(bookingId);
+    if (!booking) {
+      return res.status(404).json({ success: false, message: 'Booking not found' });
+    }
+
+    const paymentIntent = await stripe.paymentIntents.create({
+      amount: Math.round(amount * 100), // Convert to cents
+      currency,
+      metadata: { bookingId: bookingId.toString() }
+    });
+
+    // Create payment record
+    const payment = new Payment({
+      bookingId,
+      amount,
+      currency,
+      paymentMethod: 'credit_card',
+      stripePaymentIntentId: paymentIntent.id
+    });
+    await payment.save();
+
+    res.json({
+      success: true,
+      clientSecret: paymentIntent.client_secret,
+      paymentId: payment._id
+    });
+  } catch (error) {
+    console.error('Stripe error:', error);
+    res.status(500).json({ success: false, message: 'Payment processing failed' });
+  }
+});
+
+// Confirm wire transfer payment
+router.post('/wire-transfer', async (req, res) => {
+  try {
+    const { bookingId, referenceNumber } = req.body;
+
+    const booking = await Booking.findById(bookingId);
+    if (!booking) {
+      return res.status(404).json({ success: false, message: 'Booking not found' });
+    }
+
+    const payment = new Payment({
+      bookingId,
+      amount: 10000, // $10,000 for the upgrade
+      currency: 'USD',
+      paymentMethod: 'wire_transfer',
+      wireTransferReference: referenceNumber,
+      status: 'pending'
+    });
+    await payment.save();
+
+    // Send wire transfer instructions email
+    await sendWireTransferEmail(booking, payment);
+
+    res.json({
+      success: true,
+      message: 'Wire transfer payment recorded',
+      paymentId: payment._id
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Failed to process wire transfer' });
+  }
+});
+
+// Webhook for Stripe events
+router.post('/webhook', express.raw({type: 'application/json'}), async (req, res) => {
+  const sig = req.headers['stripe-signature'];
+  let event;
+
+  try {
+    event = stripe.webhooks.constructEvent(req.body, sig, process.env.STRIPE_WEBHOOK_SECRET);
+  } catch (err) {
+    console.log(`Webhook signature verification failed.`, err.message);
+    return res.status(400).send(`Webhook Error: ${err.message}`);
+  }
+
+  // Handle the event
+  switch (event.type) {
+    case 'payment_intent.succeeded':
+      const paymentIntent = event.data.object;
+      await handlePaymentSuccess(paymentIntent);
+      break;
+    case 'payment_intent.payment_failed':
+      const failedPayment = event.data.object;
+      await handlePaymentFailure(failedPayment);
+      break;
+    default:
+      console.log(`Unhandled event type ${event.type}`);
+  }
+
+  res.json({received: true});
+});
+
+async function handlePaymentSuccess(paymentIntent) {
+  try {
+    const payment = await Payment.findOne({ stripePaymentIntentId: paymentIntent.id });
+    if (payment) {
+      payment.status = 'completed';
+      payment.receiptUrl = paymentIntent.charges.data[0].receipt_url;
+      await payment.save();
+
+      // Update booking status
+      await Booking.findByIdAndUpdate(payment.bookingId, { status: 'confirmed' });
+
+      // Send payment confirmation email
+      await sendPaymentConfirmationEmail(payment);
+    }
+  } catch (error) {
+    console.error('Error handling payment success:', error);
+  }
+}
+
+async function sendWireTransferEmail(booking, payment) {
+  // Implementation for sending wire transfer instructions
+  // Similar to sendConfirmationEmail but with banking details
+}
+
+async function sendPaymentConfirmationEmail(payment) {
+  // Implementation for sending payment confirmation
+}
+
+module.exports = router;
