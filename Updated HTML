@@ -1,0 +1,113 @@
+// API Configuration
+const API_BASE_URL = 'https://your-backend-url.herokuapp.com/api';
+
+// Updated booking form submission
+document.getElementById('booking-form').addEventListener('submit', async function(e) {
+  e.preventDefault();
+  
+  const formData = {
+    name: document.getElementById('name').value,
+    email: document.getElementById('email').value,
+    company: document.getElementById('company').value,
+    role: document.getElementById('role').value,
+    preferredDate: document.getElementById('preferred-date').value,
+    preferredTime: document.getElementById('preferred-time').value
+  };
+
+  try {
+    const response = await fetch(`${API_BASE_URL}/bookings`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(formData)
+    });
+
+    const result = await response.json();
+
+    if (result.success) {
+      alert('Booking confirmed! Check your email for details.');
+      bookingModal.style.display = 'none';
+      
+      // Store booking ID for payment
+      localStorage.setItem('currentBookingId', result.booking.id);
+      
+      // Show payment modal
+      setTimeout(() => {
+        paymentModal.style.display = 'flex';
+      }, 1000);
+    } else {
+      alert('Booking failed: ' + result.message);
+    }
+  } catch (error) {
+    console.error('Booking error:', error);
+    alert('Failed to create booking. Please try again.');
+  }
+});
+
+// Updated Stripe payment
+document.getElementById('checkout-button').addEventListener('click', async function() {
+  const bookingId = localStorage.getItem('currentBookingId');
+  const amount = 10000; // $10,000
+
+  try {
+    const response = await fetch(`${API_BASE_URL}/payments/create-intent`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ bookingId, amount })
+    });
+
+    const result = await response.json();
+
+    if (result.success) {
+      // Initialize Stripe
+      const stripe = Stripe('pk_test_your_stripe_publishable_key');
+      
+      const { error } = await stripe.confirmCardPayment(result.clientSecret);
+      
+      if (error) {
+        alert('Payment failed: ' + error.message);
+      } else {
+        alert('Payment successful!');
+        paymentModal.style.display = 'none';
+        localStorage.removeItem('currentBookingId');
+      }
+    }
+  } catch (error) {
+    console.error('Payment error:', error);
+    alert('Payment processing failed.');
+  }
+});
+
+// Updated wire transfer
+document.getElementById('confirm-wire').addEventListener('click', async function() {
+  const bookingId = localStorage.getItem('currentBookingId');
+  const referenceNumber = prompt('Please enter your wire transfer reference number:');
+
+  if (referenceNumber) {
+    try {
+      const response = await fetch(`${API_BASE_URL}/payments/wire-transfer`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ 
+          bookingId, 
+          referenceNumber 
+        })
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        alert('Wire transfer recorded! We will confirm once received.');
+        paymentModal.style.display = 'none';
+        localStorage.removeItem('currentBookingId');
+      }
+    } catch (error) {
+      alert('Failed to record wire transfer.');
+    }
+  }
+});
