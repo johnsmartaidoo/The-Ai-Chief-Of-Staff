@@ -1,0 +1,43 @@
+const mongoose = require('mongoose');
+
+const paymentSchema = new mongoose.Schema({
+  bookingId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Booking',
+    required: true
+  },
+  amount: {
+    type: Number,
+    required: true
+  },
+  currency: {
+    type: String,
+    default: 'USD'
+  },
+  paymentMethod: {
+    type: String,
+    enum: ['credit_card', 'wire_transfer'],
+    required: true
+  },
+  status: {
+    type: String,
+    enum: ['pending', 'completed', 'failed', 'refunded'],
+    default: 'pending'
+  },
+  stripePaymentIntentId: {
+    type: String,
+    sparse: true
+  },
+  wireTransferReference: {
+    type: String,
+    sparse: true
+  },
+  receiptUrl: {
+    type: String,
+    trim: true
+  }
+}, {
+  timestamps: true
+});
+
+module.exports = mongoose.model('Payment', paymentSchema);
